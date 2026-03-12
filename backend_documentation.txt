@@ -1,0 +1,284 @@
+================================================================================
+                    JOB PORTAL BACKEND - TECHNICAL DOCUMENTATION
+================================================================================
+
+1. OVERVIEW
+================================================================================
+This is a full-stack job portal application built with Django (Python) for 
+the backend and React for the frontend. It follows REST API architecture with 
+JWT authentication.
+
+Technology Stack:
+- Backend Framework: Django 4.x
+- Database: MySQL (jobportal_db)
+- API Style: REST API
+- Authentication: JWT (JSON Web Tokens)
+- Frontend: React + Vite 
+- Real-time: Django Channels (WebSocket)
+- File Storage: Django Media Files
+- PDF Processing: PyPDF2
+
+
+2. ARCHITECTURE - 8 DJANGO APPS
+================================================================================
+
+2.1 ACCOUNTS APP
+-----------------
+Purpose: User authentication and profile management
+
+Models:
+  A) User (Custom User Model)
+     - Extends AbstractUser
+     - Three roles: seeker, recruiter, admin
+     - Fields: role, is_blocked
+     - Properties: is_seeker, is_recruiter, is_admin
+
+  B) Profile (One-to-One with User for Job Seekers)
+     Basic Info: phone, profile_photo, bio, profile_summary
+     Social Links: linkedin_url, github_url, portfolio_url
+     Skills: skills (stored as JSON array)
+     Languages: languages (JSON)
+     Resume: resume (file), resume_text (extracted)
+     Employment: employment_history, internships, current_company, 
+                 current_job_title, current_salary, expected_salary
+     Education: education (JSON array)
+     Projects: projects (JSON)
+     Job Preferences: preferred_job_type, preferred_locations, 
+                      preferred_industry, willing_to_relocate
+     Location: current_location, hometown
+     Personal: date_of_birth, gender, marital_status
+
+  C) Company (One-to-One with User for Recruiters)
+     - name, description, website, logo, location
+     - industry, founded_year, company_size, is_verified
+
+
+2.2 JOBS APP
+------------
+Purpose: Job listing management
+
+Models:
+  A) Job
+     - recruiter (ForeignKey to User)
+     - title, description, requirements, skills (JSON)
+     - location, is_remote
+     - salary_min, salary_max, salary_currency
+     - job_type: full_time, part_time, contract, internship, remote
+     - experience_level, application_deadline, positions
+     - status: pending → approved → rejected
+     - views (view count tracking)
+
+  B) JobSkill - Skills associated with jobs
+
+  C) SavedJob - Jobs saved by job seekers
+
+
+2.3 APPLICATIONS APP
+--------------------
+Purpose: Job application handling
+
+Models:
+  A) Application
+     - Links Job and Seeker (ForeignKey)
+     - resume (file upload), cover_letter
+     - Status workflow: applied → under_review → shortlisted → interview 
+                        → rejected / offered / hired
+     
+     AUTOMATIC MATCH SCORE ALGORITHM:
+     ┌─────────────────────────────────────────────────────────┐
+     │ Skill Match (40%)       = matched_skills/total × 40   │
+     │ Experience Match (30%)  = based on employment history │
+     │ Education Match (20%)  = degree keywords found        │
+     │ Profile Completeness (10%) = filled/total × 10        │
+     └─────────────────────────────────────────────────────────┘
+
+  B) ApplicationStatusHistory - Tracks all status changes
+
+
+2.4 CHAT APP
+------------
+Purpose: Real-time messaging between recruiters and job seekers
+
+Models:
+  A) Conversation
+     - participants (ManyToMany to User)
+     - job (ForeignKey to Job)
+     - application (ForeignKey to Application)
+     - is_active (only when shortlisted/interview)
+     
+     Interview Features:
+     - interview_date, interview_time, interview_mode
+       (online/offline/phone)
+     - meeting_link, hr_contact, required_documents
+     - interview_status: pending → accepted → rejected → 
+                         reschedule_requested → completed
+     
+     Selection Features:
+     - final_selection_status: pending → selected → rejected
+     - selection_date, selection_notes
+
+  B) Message
+     - conversation, sender, content
+     - message_type: text, interview_invite, document_request
+     - is_read
+
+
+2.5 NOTIFICATIONS APP
+--------------------
+Purpose: User notification system
+
+Models:
+  A) Notification
+     - Types: application, status, message, job, interview, system
+     - title, message, link, is_read, created_at
+
+  B) UserNotificationSettings
+     - User preferences for email/in-app notifications
+
+
+2.6 AI APP
+----------
+Purpose: AI-powered features for job matching and resume parsing
+
+Endpoints:
+  A) match_resume
+     - Upload PDF → Extract text (PyPDF2) → Extract skills 
+       → Match with job requirements
+     - Uses keyword matching for skill extraction
+
+  B) recommend_jobs
+     - Based on user profile skills
+     - Matches skills with approved jobs
+     - Returns top 20 matching jobs sorted by score
+
+  C) parse_resume
+     - Extract skills from uploaded PDF
+
+  D) job_match_details
+     - Matched skills, missing skills
+     - Experience gap analysis
+
+  E) analyze_idea
+     - AI-generated insights for startup ideas
+     - Summary, strengths, weaknesses
+     - Market score (1-10) based on category
+     - Trend analysis
+
+
+2.7 ANALYTICS APP
+-----------------
+Purpose: Admin dashboard and statistics
+
+Admin-only endpoints:
+  - dashboard_stats: Total users, jobs, applications, ideas
+  - user_analytics: Users by role, registration by month
+  - job_analytics: Jobs by status, type, location
+  - application_analytics: Applications by status, trends
+  - idea_analytics: Ideas by status/category, top voted
+  - skill_demand_analytics: Most demanded skills from jobs
+
+Public endpoints:
+  - home_stats: Public stats (jobs, companies, candidates, ideas)
+  - featured_jobs: Latest 6 jobs
+  - featured_companies: Companies with logos
+
+
+2.8 IDEAS APP
+-------------
+Purpose: Startup idea sharing platform
+
+Models:
+  A) StartupIdea
+     - title, problem_statement, solution, target_audience
+     - business_model, category (11 categories)
+     - Status: pending → approved → rejected
+     - AI fields: ai_summary, ai_strengths, ai_weaknesses, 
+                  ai_market_score, ai_trend_analysis
+     - Voting: upvotes, downvotes, vote_score
+     - Stats: views, comment_count
+
+  B) Vote - Upvote/downvote (one per user per idea)
+
+  C) Comment - Comments with threading (replies)
+
+  D) Bookmark - Save ideas for later
+
+
+3. AUTHENTICATION & SECURITY
+================================================================================
+
+JWT Authentication:
+- Access Token: 1 hour validity
+- Refresh Token: 7 days validity with rotation
+- Tokens stored in HTTP-only cookies or headers
+
+Security Features:
+- CORS enabled (development)
+- CSRF protection
+- Password validation (length, common passwords, similarity)
+- File upload limits (5MB)
+
+
+4. DATABASE
+================================================================================
+MySQL Configuration:
+- Database: jobportal_db
+- User: vishu
+- Host: 127.0.0.1:3306
+- Charset: utf8mb4
+
+
+5. API ENDPOINTS SUMMARY
+================================================================================
+App             | Route              | Description
+----------------|--------------------|----------------------------------
+accounts        | /api/auth/         | register, login, profile, password
+jobs            | /api/jobs/         | CRUD jobs, search, saved jobs
+applications    | /api/applications/ | apply, status, history
+chat            | /api/chat/         | conversations, messages
+notifications   | /api/notifications/| list, mark read, settings
+ai              | /api/ai/           | resume matching, recommendations
+analytics       | /api/analytics/    | dashboard, stats
+ideas           | /api/ideas/        | ideas CRUD, voting, comments
+
+
+6. KEY ALGORITHMS
+================================================================================
+
+A) Match Score Calculation:
+   - Skill Match (40%): Compares job skills with seeker skills
+   - Experience Match (30%): Based on employment history length
+   - Education Match (20%): Checks education keywords
+   - Profile Completeness (10%): Filled profile fields
+
+B) Skill Extraction:
+   - Uses keyword matching against predefined tech skills list
+   - Case-insensitive matching
+   - Supports 70+ skills (Python, Java, React, AWS, etc.)
+
+C) Experience Gap Calculation:
+   - Uses regex to parse experience strings
+   - Handles formats: "3 years", "2-4 years", "5+ years"
+
+
+7. FILE STRUCTURE
+================================================================================
+backend/
+├── jobportal/          # Project settings
+├── accounts/           # User management
+├── jobs/               # Job listings
+├── applications/       # Job applications
+├── chat/               # Messaging system
+├── notifications/      # Notifications
+├── ai/                 # AI features
+├── analytics/          # Statistics
+├── ideas/              # Startup ideas
+└── media/              # Uploaded files
+    ├── resumes/
+    ├── company_logos/
+    └── profile_photos/
+
+
+================================================================================
+                           END OF DOCUMENTATION
+================================================================================
