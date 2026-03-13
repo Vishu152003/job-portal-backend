@@ -78,11 +78,11 @@ if os.environ.get("RENDER"):
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.mysql",
-            "NAME": os.environ.get("railway"),
-            "USER": os.environ.get("root"),
-            "PASSWORD": os.environ.get("WKFwNijkmVFfDYkrHPWxuiaTZLHufIbW"),
-            "HOST": os.environ.get("centerbeam.proxy.rlwy.net"),
-            "PORT": os.environ.get("51607", "3306"),
+            "NAME": os.environ.get("MYSQLDATABASE"),
+            "USER": os.environ.get("MYSQLUSER"),
+            "PASSWORD": os.environ.get("MYSQLPASSWORD"),
+            "HOST": os.environ.get("MYSQLHOST"),
+            "PORT": os.environ.get("MYSQLPORT"),
             "OPTIONS": {
                 "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
             },
