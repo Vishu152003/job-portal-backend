@@ -73,20 +73,38 @@ WSGI_APPLICATION = 'jobportal.wsgi.application'
 
 # Database
 # MySQL Configuration
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'jobportal_db',
-        'USER': 'vishu',
-        'PASSWORD': 'Anu*2001',
-        'HOST': '127.0.0.1',
-        'PORT': '3306',
-        'OPTIONS': {
-            'charset': 'utf8mb4',
-            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+# Check if the app is running on Render (production)
+if os.environ.get("RENDER"):
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.mysql",
+            "NAME": os.environ.get("railway"),
+            "USER": os.environ.get("root"),
+            "PASSWORD": os.environ.get("WKFwNijkmVFfDYkrHPWxuiaTZLHufIbW"),
+            "HOST": os.environ.get("centerbeam.proxy.rlwy.net"),
+            "PORT": os.environ.get("51607", "3306"),
+            "OPTIONS": {
+                "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+            },
         }
     }
-}
+
+# Local development database
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.mysql",
+            "NAME": "jobportal_db",
+            "USER": "vishu",
+            "PASSWORD": "Anu*2001",
+            "HOST": "127.0.0.1",
+            "PORT": "3306",
+            "OPTIONS": {
+                "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+            },
+        }
+    }
+
 
 # For SQLite (for development/testing)
 # DATABASES = {
