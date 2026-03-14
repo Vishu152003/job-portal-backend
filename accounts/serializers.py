@@ -223,3 +223,18 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         if attrs['new_password'] != attrs['new_password_confirm']:
             raise serializers.ValidationError({"new_password": "Password fields didn't match."})
         return attrs
+
+
+class PasswordResetDirectSerializer(serializers.Serializer):
+    """Serializer for direct password reset (no email)"""
+    email = serializers.EmailField()
+    new_password = serializers.CharField(min_length=8, validators=[validate_password])
+    new_password_confirm = serializers.CharField(min_length=8, write_only=True)
+    
+    def validate(self, attrs):
+        if attrs['new_password'] != attrs['new_password_confirm']:
+            raise serializers.ValidationError({"new_password": "Passwords don't match."})
+        return attrs
+
+
+

@@ -104,7 +104,7 @@ class Profile(models.Model):
     
     # Status
     is_profile_complete = models.BooleanField(default=False)
-    profile_views = models.IntegerField(default=0)
+    profile_views = models.IntegerField(default=0, db_index=True)
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)

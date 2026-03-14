@@ -1,7 +1,10 @@
 from rest_framework import viewsets, status, permissions, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Q
+from django.db.models import Q, F
+from django.db import transaction
+import logging
+from accounts.models import Profile
 from .models import Application, ApplicationStatusHistory
 from .serializers import (
     ApplicationSerializer, ApplicationCreateSerializer,
@@ -22,6 +25,17 @@ class IsSeekerOrRecruiter(permissions.BasePermission):
 
 
 class ApplicationViewSet(viewsets.ModelViewSet):
+    logger = logging.getLogger(__name__)
+
+    def increment_profile_view(self, seeker):
+        """Atomically increment profile views"""
+        with transaction.atomic():
+            profile, created = Profile.objects.get_or_create(user=seeker)
+            profile.profile_views = F('profile_views') + 1
+            profile.save()
+            if created:
+                self.logger.info("Created profile for new seeker %s", seeker.username)
+            self.logger.info("Incremented profile views for %s", seeker.username)
     """ViewSet for Application model"""
     
     queryset = Application.objects.all()
@@ -190,6 +204,23 @@ class ApplicationViewSet(viewsets.ModelViewSet):
                     )
             
             self._create_notification(application, old_status, new_status, notes)
+            
+            # Broadcast stats update to recruiter via WebSocket
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                recruiter_group = f"user_{application.job.recruiter.id}"
+                current_hired = Application.objects.filter(job__recruiter=application.job.recruiter, status='hired').count()
+                current_total = Application.objects.filter(job__recruiter=application.job.recruiter).count()
+                async_to_sync(channel_layer.group_send)(
+                    recruiter_group,
+                    {
+                        'type': 'stats_update',
+                        'hired': current_hired,
+                        'total': current_total,
+                    }
+                )
         
         return Response(ApplicationSerializer(application).data)
     
@@ -247,25 +278,23 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             )
 
         try:
-            applications = Application.objects.filter(job__id=job_id, job__recruiter=request.user).select_related('seeker', 'job', 'job__recruiter').order_by('-match_score')
+            job = Job.objects.get(id=job_id)
+
+            applications = Application.objects.filter(job=job).select_related('job', 'seeker').order_by('-match_score')
             
-            # Increment profile_views when recruiter views applicants
-            from accounts.models import Profile
+            # Increment profile views reliably when recruiter views applicants list
             for application in applications:
                 try:
-                    profile = application.seeker.profile
-                    profile.profile_views += 1
-                    profile.save(update_fields=['profile_views'])
-                except Exception:
-                    pass
+                    self.increment_profile_view(application.seeker)
+                except Exception as e:
+                    self.logger.error("Profile view increment error for %s: %s", application.seeker.username, e)
             
             serializer = RecruiterApplicationSerializer(applications, many=True, context={'request': request})
             return Response(serializer.data)
+        except Job.DoesNotExist:
+            return Response({'error': 'Job not found'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
     @action(detail=False, methods=['get'], url_path='my-job-applicants')
     def my_job_applicants(self, request):
@@ -277,6 +306,7 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             )
 
         applications = Application.objects.filter(job__recruiter=request.user).select_related('job', 'seeker').order_by('-match_score')
+        
         serializer = RecruiterApplicationSerializer(applications, many=True, context={'request': request})
         return Response(serializer.data)
 
@@ -350,6 +380,29 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             'pending': pending,
             'interview': interview,
             'rejected': rejected,
+            'offered': offered
+        })
+
+    @action(detail=False, methods=['get'], url_path='recruiter-stats')
+    def recruiter_stats(self, request):
+        """Get recruiter-specific application statistics (efficient counts)"""
+        if request.user.role != 'recruiter':
+            return Response({'error': 'Only recruiters can access stats'}, status=status.HTTP_403_FORBIDDEN)
+        
+        total = Application.objects.filter(job__recruiter=request.user).count()
+        pending = Application.objects.filter(job__recruiter=request.user, status__in=['applied', 'pending']).count()
+        interview_shortlisted = Application.objects.filter(job__recruiter=request.user, status__in=['interview', 'shortlisted']).count()
+        rejected = Application.objects.filter(job__recruiter=request.user, status='rejected').count()
+        hired = Application.objects.filter(job__recruiter=request.user, status='hired').count()
+        offered = Application.objects.filter(job__recruiter=request.user, status__in=['offered', 'hired']).count()
+        
+        return Response({
+            'total': total,
+            'pending': pending,
+            'shortlisted': interview_shortlisted,
+            'interview': interview_shortlisted,
+            'rejected': rejected,
+            'hired': hired,
             'offered': offered
         })
     

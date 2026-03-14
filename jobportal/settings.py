@@ -191,9 +191,8 @@ CHANNEL_LAYERS = {
 }
 
 # Email configuration (for password reset)
-# Set USE_CONSOLE_EMAIL = True to see emails in console (development)
-# Set USE_CONSOLE_EMAIL = False to send real emails via SMTP
-USE_CONSOLE_EMAIL = True
+# Set USE_CONSOLE_EMAIL = False → REAL EMAILS ENABLED (fill Gmail creds below)
+USE_CONSOLE_EMAIL = False
 
 if USE_CONSOLE_EMAIL:
     # Development: print emails to console
@@ -201,12 +200,16 @@ if USE_CONSOLE_EMAIL:
     DEFAULT_FROM_EMAIL = 'JobPortal <noreply@jobportal.com>'
 else:
     # Production: send real emails via Gmail SMTP
-    # IMPORTANT: Replace with your actual Gmail credentials
-    # For Gmail, you need to use an "App Password" (16 characters)
+# 🔥 STEP 1: Enable 2FA on your Gmail account
+# 🔥 STEP 2: Generate App Password: https://myaccount.google.com/apppasswords
+# 🔥 STEP 3: Replace these values:
+#    EMAIL_HOST_USER = 'your-gmail@gmail.com'    
+#    EMAIL_HOST_PASSWORD = 'your-16-char-app-password'
+# 🔥 STEP 4: Save & restart server → Test forgot password!
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
     EMAIL_HOST = 'smtp.gmail.com'
     EMAIL_PORT = 587
     EMAIL_USE_TLS = True
-    EMAIL_HOST_USER = 'your-email@gmail.com'      # Replace with your Gmail address
-    EMAIL_HOST_PASSWORD = 'your-app-password'    # Replace with your Gmail App Password
-    DEFAULT_FROM_EMAIL = 'JobPortal <your-email@gmail.com>'
+    EMAIL_HOST_USER = ''  # ENTER YOUR GMAIL HERE e.g. 'user@gmail.com'
+    EMAIL_HOST_PASSWORD = ''  # ENTER APP PASSWORD HERE (16 chars)
+    DEFAULT_FROM_EMAIL = 'JobPortal <your-gmail@gmail.com>'

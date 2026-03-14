@@ -6,7 +6,7 @@ User = get_user_model()
 
 def create_notification(user, title, message, notification_type, link=None):
     """
-    Helper function to create a notification for a user.
+    Helper function to create a notification for a user + send email if enabled.
     
     Args:
         user: User instance or user ID
@@ -18,6 +18,10 @@ def create_notification(user, title, message, notification_type, link=None):
     Returns:
         Notification instance
     """
+    from django.core.mail import send_mail
+    from django.conf import settings
+    from notifications.models import UserNotificationSettings
+    
     if isinstance(user, int):
         user = User.objects.get(id=user)
     
@@ -28,6 +32,24 @@ def create_notification(user, title, message, notification_type, link=None):
         notification_type=notification_type,
         link=link
     )
+    
+    # Send email notification if enabled
+    try:
+        settings_obj, created = UserNotificationSettings.objects.get_or_create(user=user)
+        if settings_obj.email_notifications:
+            email_subject = f'JobPortal - {title}'
+            email_message = f'{message}\n\nView in app: {link}' if link else message
+            send_mail(
+                email_subject,
+                email_message,
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                fail_silently=True,
+            )
+            print(f"📧 Email notification sent to {user.email}")
+    except Exception as e:
+        print(f"Email notification failed: {e}")
+    
     return notification
 
 

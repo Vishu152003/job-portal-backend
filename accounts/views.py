@@ -5,19 +5,24 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import authenticate, get_user_model
 from django.core.mail import send_mail
 from django.conf import settings
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth.password_validation import validate_password
 import json
 from .models import Profile, Company
+import logging
 from .serializers import (
     UserSerializer, UserRegistrationSerializer, ProfileSerializer,
     CompanySerializer, LoginSerializer, ChangePasswordSerializer,
-    PasswordResetRequestSerializer, PasswordResetConfirmSerializer
+    PasswordResetRequestSerializer, PasswordResetConfirmSerializer, PasswordResetDirectSerializer
 )
+from jobs.models import SavedJob
+from applications.models import Application
 
 User = get_user_model()
 
@@ -128,7 +133,7 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
     """API endpoint to get/update current user"""
     
     serializer_class = UserSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
     
     def get_object(self):
         return self.request.user
@@ -146,7 +151,7 @@ class ProfileView(generics.RetrieveUpdateAPIView):
     """API endpoint for user profile (seekers) - Full profile management"""
     
     serializer_class = ProfileSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     
     def get_object(self):
@@ -195,7 +200,7 @@ class ProfileView(generics.RetrieveUpdateAPIView):
                 # For non-JSON fields, just copy as is
                 update_data[key] = data.get(key)
         
-        # Now update the instance with the processed data
+
         for key, value in update_data.items():
             if key in json_fields:
                 # For JSON fields, set the value directly
@@ -214,7 +219,7 @@ class CompanyView(generics.RetrieveUpdateAPIView):
     """API endpoint for company profile (recruiters)"""
     
     serializer_class = CompanySerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     
     def get_object(self):
@@ -230,7 +235,7 @@ class CompanyView(generics.RetrieveUpdateAPIView):
 class ChangePasswordView(APIView):
     """API endpoint to change password"""
     
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
     
     def post(self, request):
         serializer = ChangePasswordSerializer(data=request.data)
@@ -258,7 +263,7 @@ class UserListView(generics.ListAPIView):
     
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
         if not self.request.user.is_admin:
@@ -279,7 +284,7 @@ class UserListView(generics.ListAPIView):
 class BlockUserView(APIView):
     """API endpoint to block/unblock users (admin only)"""
     
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
     
     def post(self, request, user_id):
         if not request.user.is_admin:
@@ -315,7 +320,7 @@ class BlockUserView(APIView):
 class DeleteUserView(APIView):
     """API endpoint to delete users (admin only)"""
     
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
     
     def delete(self, request, user_id):
         if not request.user.is_admin:
@@ -348,7 +353,7 @@ class DeleteUserView(APIView):
 
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsAuthenticated])
 def current_user_view(request):
     """Get current user info with profile/company data"""
     user = request.user
@@ -365,7 +370,7 @@ def current_user_view(request):
 
 
 class PasswordResetRequestView(APIView):
-    """API endpoint to request password reset"""
+    """API endpoint to request password reset - direct flow (no email)"""
     
     permission_classes = [permissions.AllowAny]
     
@@ -378,60 +383,15 @@ class PasswordResetRequestView(APIView):
         
         try:
             user = User.objects.get(email=email)
-            
-            # Generate password reset token
-            token = default_token_generator.make_token(user)
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-            
-            # Build the reset URL
-            # In production, this would be your actual domain
-            reset_url = f"http://localhost:5173/reset-password/{token}/{uid}"
-            
-            # Always print the reset link to console for development
-            print("\n" + "="*50)
-            print("PASSWORD RESET LINK")
-            print("="*50)
-            print(f"User: {user.username}")
-            print(f"Email: {email}")
-            print(f"Reset URL: {reset_url}")
-            print("="*50 + "\n")
-            
-            # Send email
-            subject = 'Password Reset Request - JobPortal'
-            message = f'''
-            Hello {user.username},
-
-            We received a request to reset your password. Click the link below to reset your password:
-
-            {reset_url}
-
-            If you didn't request this, please ignore this email.
-
-            Thanks,
-            JobPortal Team
-            '''
-            
-            try:
-                send_mail(
-                    subject,
-                    message,
-                    settings.DEFAULT_FROM_EMAIL,
-                    [email],
-                    fail_silently=False,
-                )
-            except Exception as e:
-                # Log the error but don't reveal to user
-                print(f"Email sending error: {e}")
-                # In development, still return success
-                
+            return Response(
+                {'message': 'Email verified. You can now reset your password.'},
+                status=status.HTTP_200_OK
+            )
         except User.DoesNotExist:
-            # Don't reveal whether the email exists
-            pass
-        
-        return Response(
-            {'message': 'If an account with this email exists, a password reset link has been sent.'},
-            status=status.HTTP_200_OK
-        )
+            return Response(
+                {'error': 'Email not registered.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
 
 class PasswordResetConfirmView(APIView):
@@ -474,3 +434,97 @@ class PasswordResetConfirmView(APIView):
             {'message': 'Password reset successfully'},
             status=status.HTTP_200_OK
         )
+
+
+class PasswordResetDirectView(APIView):
+    """API endpoint for direct password reset (email verify + new password)"""
+    
+    permission_classes = [permissions.AllowAny]
+    
+    def post(self, request):
+        serializer = PasswordResetDirectSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        email = serializer.validated_data['email']
+        new_password = serializer.validated_data['new_password']
+        
+        User = get_user_model()
+        
+        try:
+            user = User.objects.get(email=email)
+            user.set_password(new_password)
+            user.save()
+            
+            return Response(
+                {'message': 'Password updated successfully. Please login.'},
+                status=status.HTTP_200_OK
+            )
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'Email not registered.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class IsJobSeeker(permissions.BasePermission):
+    """Permission class for job seekers only"""
+    
+    def has_permission(self, request, view):
+        return (
+            request.user and 
+            request.user.is_authenticated and 
+            request.user.role == 'seeker'
+        )
+
+
+class JobSeekerDashboardView(APIView):
+    """API endpoint for job seeker dashboard stats"""
+    
+    permission_classes = [IsJobSeeker]
+    
+    def get(self, request):
+        user = request.user
+        profile, _ = Profile.objects.get_or_create(user=user)
+        
+        applied_count = Application.objects.filter(seeker=user).count()
+        saved_count = SavedJob.objects.filter(user=user).count()
+        interviews_count = Application.objects.filter(
+            seeker=user, 
+            status__in=['interview', 'offered']
+        ).count()
+        profile_views = profile.profile_views
+        
+        return Response({
+            'applied_count': applied_count,
+            'saved_count': saved_count,
+            'interviews_count': interviews_count,
+            'profile_views': profile_views
+        })
+
+
+class ProfileDetailView(APIView):
+    logger = logging.getLogger(__name__)
+    """API endpoint for viewing job seeker profile (increments views for recruiters)"""
+    
+    def get(self, request, pk):
+        try:
+            profile = Profile.objects.get(id=pk)
+        except Profile.DoesNotExist:
+            return Response({'error': 'Profile not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Increment views ONLY if recruiter viewing different seeker's profile
+        if (request.user.is_authenticated and 
+            hasattr(request.user, 'role') and 
+            request.user.role == 'recruiter' and 
+            request.user != profile.user):
+            try:
+                with transaction.atomic():
+                    profile.profile_views = F('profile_views') + 1
+                    profile.save()
+                    self.logger.info("Incremented profile view for profile %s by recruiter %s", pk, request.user.username)
+            except Exception as e:
+                self.logger.error("Error incrementing profile view %s: %s", pk, e)
+        
+        serializer = ProfileSerializer(profile)
+        return Response(serializer.data)
+

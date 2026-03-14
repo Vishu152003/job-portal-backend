@@ -132,3 +132,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'message': event['message'],
             'conversation_id': event['conversation_id'],
         }))
+
+    async def stats_update(self, event):
+        """Handle incoming stats update for recruiter dashboard"""
+        await self.send(text_data=json.dumps({
+            'type': 'stats_update',
+            'hired': event['hired'],
+            'total': event['total'],
+        }))
